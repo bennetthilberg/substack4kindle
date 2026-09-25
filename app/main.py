@@ -177,7 +177,7 @@ def page(title: str, body: str, *, authenticated: bool = False, reader_mode: boo
           <form method='post' action='/logout'><button type='submit'>Log out</button></form>
         </nav>
         """
-    reader_assets = "<link rel='stylesheet' href='/static/reader.css?v=1'>" if reader_mode else ""
+    reader_assets = "<link rel='stylesheet' href='/static/reader.css?v=2'>" if reader_mode else ""
     reader_class = " class='reader-page'" if reader_mode else ""
     document = f"""<!doctype html>
 <html lang='en'>
@@ -187,32 +187,36 @@ def page(title: str, body: str, *, authenticated: bool = False, reader_mode: boo
   <title>{html.escape(title)} · Substack reader</title>
   {reader_assets}
   <style>
-    :root {{ color-scheme: light; font-family: Georgia, 'Times New Roman', serif; }}
-    body {{ margin: 0 auto; max-width: 52rem; padding: 1.1rem 1rem 4rem; color: #202124; background: #fff; font-size: 1.1rem; line-height: 1.62; }}
-    nav {{ display: flex; flex-wrap: wrap; align-items: center; gap: .55rem; border-bottom: 1px solid #bbb; padding-bottom: .8rem; margin-bottom: 1.35rem; font-family: sans-serif; font-size: .95rem; }}
-    nav a, button, .button {{ display: inline-block; border: 1px solid #777; border-radius: .25rem; padding: .35rem .65rem; color: #111; background: #f3f3f3; text-decoration: none; }}
+    :root {{ color-scheme: dark; font-family: Georgia, 'Times New Roman', serif; }}
+    html {{ background: #141414; }}
+    body {{ margin: 0 auto; max-width: 52rem; padding: 1.1rem 1rem 4rem; color: #eceae5; background: #141414; font-size: 1.1rem; line-height: 1.62; }}
+    a {{ color: #c6d8ff; }}
+    nav {{ display: flex; flex-wrap: wrap; align-items: center; gap: .55rem; border-bottom: 1px solid #505050; padding-bottom: .8rem; margin-bottom: 1.35rem; font-family: sans-serif; font-size: .95rem; }}
+    nav a, button, .button {{ display: inline-block; border: 1px solid #666; border-radius: .25rem; padding: .35rem .65rem; color: #eceae5; background: #292d30; text-decoration: none; }}
     nav a:first-child {{ font-weight: bold; }}
     nav form {{ margin: 0; }}
     h1, h2, h3 {{ line-height: 1.2; }}
     h1 {{ font-size: 1.85rem; }}
     h2 {{ font-size: 1.4rem; }}
     h3 {{ font-size: 1.15rem; margin-bottom: .25rem; }}
-    .muted {{ color: #5f6368; font-family: sans-serif; font-size: .9rem; }}
-    .item {{ border-bottom: 1px solid #ccc; padding: .85rem 0 1rem; }}
-    .item a {{ color: #111; text-decoration: none; }}
+    .muted {{ color: #b9b6ae; font-family: sans-serif; font-size: .9rem; }}
+    .item {{ border-bottom: 1px solid #505050; padding: .85rem 0 1rem; }}
+    .item a {{ color: #eceae5; text-decoration: none; }}
     .item a:hover, .item a:focus {{ text-decoration: underline; }}
     .subtitle {{ margin: .2rem 0 0; }}
     label {{ display: block; margin: .8rem 0 .25rem; font-family: sans-serif; font-size: .95rem; }}
-    input {{ box-sizing: border-box; width: 100%; max-width: 30rem; padding: .6rem; border: 1px solid #777; border-radius: .25rem; font: inherit; }}
+    input {{ box-sizing: border-box; width: 100%; max-width: 30rem; padding: .6rem; border: 1px solid #777; border-radius: .25rem; color: #eceae5; background: #202326; font: inherit; }}
+    input:focus, button:focus, nav a:focus, .button:focus {{ outline: 2px solid #a8c6ff; outline-offset: 2px; }}
     button {{ font: inherit; cursor: pointer; }}
+    button:disabled {{ color: #888; cursor: default; }}
     form.stack {{ max-width: 34rem; margin: 1rem 0 2rem; }}
-    .notice {{ border-left: .35rem solid #777; padding: .45rem .75rem; background: #f3f3f3; }}
+    .notice {{ border-left: .35rem solid #777; padding: .45rem .75rem; background: #202326; }}
     article {{ max-width: 46rem; font-size: calc(1.1rem + 4px); }}
     article img {{ display: block; max-width: 100%; height: auto; margin: 1rem auto; }}
     article figure {{ margin: 1rem 0; }}
-    article figcaption {{ color: #5f6368; font-family: sans-serif; font-size: .9rem; }}
-    article pre {{ white-space: pre-wrap; overflow-wrap: anywhere; background: #f3f3f3; padding: .7rem; }}
-    article blockquote {{ margin-left: .5rem; padding-left: 1rem; border-left: .25rem solid #aaa; }}
+    article figcaption {{ color: #b9b6ae; font-family: sans-serif; font-size: .9rem; }}
+    article pre {{ white-space: pre-wrap; overflow-wrap: anywhere; background: #202326; padding: .7rem; }}
+    article blockquote {{ margin-left: .5rem; padding-left: 1rem; border-left: .25rem solid #666; }}
     article a {{ overflow-wrap: anywhere; }}
     .back {{ font-family: sans-serif; font-size: .95rem; }}
   </style>

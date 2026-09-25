@@ -6,7 +6,8 @@ body.reader-page {
 }
 
 #reader-shell {
-  color: #202124;
+  color: #eceae5;
+  background: #141414;
 }
 
 #reader-topbar {
@@ -14,41 +15,55 @@ body.reader-page {
   box-sizing: border-box;
   min-height: 46px;
   padding: 8px 18px;
-  border-bottom: 1px solid #d1d1d1;
+  border-bottom: 1px solid #505050;
+  background: #1b1d1f;
   font: 14px/28px Arial, sans-serif;
 }
 
 #reader-topbar a {
-  color: #202124;
+  color: #eceae5;
   text-decoration: none;
   white-space: nowrap;
 }
 
 #reader-topbar a:focus,
 #reader-footer button:focus {
-  outline: 2px solid #202124;
-  outline-offset: 2px;
+  outline: 2px solid #a8c6ff;
+  outline-offset: -3px;
 }
 
 .reader-back {
   position: absolute;
-  top: 8px;
-  left: 18px;
+  top: 0;
+  left: 0;
+  box-sizing: border-box;
+  width: 90px;
+  height: 46px;
+  border-right: 1px solid #505050;
+  background: #292d30;
+  line-height: 45px;
+  text-align: center;
 }
 
 #reader-topbar > a:last-child:not(.reader-back) {
   position: absolute;
-  top: 8px;
-  right: 18px;
+  top: 0;
+  right: 0;
+  box-sizing: border-box;
+  width: 82px;
+  height: 46px;
+  border-left: 1px solid #505050;
+  line-height: 45px;
+  text-align: center;
 }
 
 .reader-top-title {
   display: block;
-  margin: 0 75px;
+  margin: 0 96px;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
-  color: #555;
+  color: #c7c4bd;
   text-align: center;
 }
 
@@ -111,7 +126,7 @@ body.reader-page {
 
 #reader-content td,
 #reader-content th {
-  border: 1px solid #aaa;
+  border: 1px solid #666;
   padding: .2em .3em;
   word-break: break-word;
 }
@@ -181,7 +196,8 @@ body.reader-page.paged {
   display: block;
   box-sizing: border-box;
   height: 44px;
-  border-top: 1px solid #d1d1d1;
+  border-top: 1px solid #505050;
+  background: #1b1d1f;
   font: 14px/43px Arial, sans-serif;
   text-align: center;
 }
@@ -194,12 +210,12 @@ body.reader-page.paged {
   padding: 0 8px;
   border: 0;
   background: transparent;
-  color: #202124;
+  color: #eceae5;
   font: 25px/36px Arial, sans-serif;
 }
 
 #reader-footer button:disabled {
-  color: #9a9a9a;
+  color: #888;
 }
 
 #reader-prev { left: 10px; }
@@ -207,8 +223,7 @@ body.reader-page.paged {
 
 @media (max-width: 420px) {
   #reader-topbar { padding-right: 12px; padding-left: 12px; }
-  .reader-back { left: 12px; }
-  #reader-topbar > a:last-child:not(.reader-back) { right: 12px; }
+  .reader-top-title { margin-right: 94px; margin-left: 94px; }
   #reader-frame { padding-right: 14px; padding-left: 14px; }
   .paged #reader-viewport { right: 14px; left: 14px; }
   #reader-content { font-size: calc(1.1rem + 4px); }
