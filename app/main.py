@@ -13,12 +13,13 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
-from urllib.parse import quote
+from urllib.parse import quote, urljoin
 
 import bleach
 from bs4 import BeautifulSoup
 from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
+from fastapi.staticfiles import StaticFiles
 from playwright.async_api import BrowserContext, Page, TimeoutError as PlaywrightTimeoutError
 from playwright.async_api import async_playwright
 
@@ -27,6 +28,7 @@ BASE_URL = "https://substack.com"
 DATA_DIR = Path(os.environ.get("DATA_DIR", "/data"))
 CONFIG_PATH = DATA_DIR / "config.json"
 CACHE_PATH = DATA_DIR / "sync-cache.json"
+PROGRESS_PATH = DATA_DIR / "reading-progress.json"
 SESSION_COOKIE = "reader_session"
 MAX_ITEMS = 60
 
@@ -102,6 +104,21 @@ def write_sync_cache(cache: dict[str, Any]) -> None:
     temporary.replace(CACHE_PATH)
 
 
+def read_progress() -> dict[str, Any]:
+    try:
+        value = json.loads(PROGRESS_PATH.read_text())
+        return value if isinstance(value, dict) else {}
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+
+def write_progress(progress: dict[str, Any]) -> None:
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    temporary = PROGRESS_PATH.with_suffix(".tmp")
+    temporary.write_text(json.dumps(progress, separators=(",", ":")))
+    temporary.replace(PROGRESS_PATH)
+
+
 def password_hash(password: str, salt: bytes | None = None) -> str:
     salt = salt or secrets.token_bytes(16)
     digest = hashlib.scrypt(
@@ -149,9 +166,9 @@ def is_logged_in(request: Request) -> bool:
     return valid_session(request.cookies.get(SESSION_COOKIE), config.get("session_secret"))
 
 
-def page(title: str, body: str, *, authenticated: bool = False, status_code: int = 200) -> HTMLResponse:
+def page(title: str, body: str, *, authenticated: bool = False, reader_mode: bool = False, status_code: int = 200) -> HTMLResponse:
     nav = ""
-    if authenticated:
+    if authenticated and not reader_mode:
         nav = """
         <nav>
           <a href='/reader'>All</a>
@@ -160,12 +177,15 @@ def page(title: str, body: str, *, authenticated: bool = False, status_code: int
           <form method='post' action='/logout'><button type='submit'>Log out</button></form>
         </nav>
         """
+    reader_assets = "<link rel='stylesheet' href='/static/reader.css?v=1'>" if reader_mode else ""
+    reader_class = " class='reader-page'" if reader_mode else ""
     document = f"""<!doctype html>
 <html lang='en'>
 <head>
   <meta charset='utf-8'>
   <meta name='viewport' content='width=device-width, initial-scale=1'>
   <title>{html.escape(title)} · Substack reader</title>
+  {reader_assets}
   <style>
     :root {{ color-scheme: light; font-family: Georgia, 'Times New Roman', serif; }}
     body {{ margin: 0 auto; max-width: 52rem; padding: 1.1rem 1rem 4rem; color: #202124; background: #fff; font-size: 1.1rem; line-height: 1.62; }}
@@ -197,7 +217,7 @@ def page(title: str, body: str, *, authenticated: bool = False, status_code: int
     .back {{ font-family: sans-serif; font-size: .95rem; }}
   </style>
 </head>
-<body>{nav}{body}</body>
+<body{reader_class}>{nav}{body}</body>
 </html>"""
     return HTMLResponse(document, status_code=status_code)
 
@@ -215,11 +235,24 @@ def auth_redirect(request: Request) -> RedirectResponse | None:
     return None
 
 
-def clean_article_html(raw_html: str | None) -> str:
+def clean_article_html(raw_html: str | None, original_url: str | None = None) -> str:
     if not raw_html:
         return "<p>No article body was returned by Substack.</p>"
+    source = BeautifulSoup(raw_html, "html.parser")
+    for tag in source.find_all(["script", "style", "form", "input", "button"]):
+        tag.decompose()
+    for tag in source.find_all(["iframe", "video", "audio", "object", "embed"]):
+        if not tag.parent:
+            continue
+        replacement = source.new_tag("p")
+        replacement.string = "This article contains media. "
+        if original_url and original_url.startswith(("https://", "http://")):
+            link = source.new_tag("a", href=original_url)
+            link.string = "Open it in the original article."
+            replacement.append(link)
+        tag.replace_with(replacement)
     cleaned = bleach.clean(
-        raw_html,
+        str(source),
         tags=ALLOWED_TAGS,
         attributes=ALLOWED_ATTRIBUTES,
         protocols=["http", "https", "mailto"],
@@ -233,7 +266,8 @@ def clean_article_html(raw_html: str | None) -> str:
         source = image.get("src", "")
         if source.startswith("//"):
             image["src"] = "https:" + source
-        image["loading"] = "lazy"
+        elif source and not source.startswith(("https://", "http://")):
+            image["src"] = urljoin(original_url or BASE_URL, source)
         image["referrerpolicy"] = "no-referrer"
     for link in soup.find_all("a"):
         if link.get("href", "").startswith("/"):
@@ -589,6 +623,8 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title="Substack for Kindle", docs_url=None, redoc_url=None, lifespan=lifespan)
+app.mount("/static", StaticFiles(directory=Path(__file__).parent / "static"), name="static")
+progress_lock = asyncio.Lock()
 
 
 SYNC_ORIGINS = {"https://substack.com", "https://www.substack.com"}
@@ -731,7 +767,7 @@ async def logout() -> RedirectResponse:
     return response
 
 
-def render_items(items: list[dict[str, Any]], section_name: str, next_cursor: str | None) -> str:
+def render_items(items: list[dict[str, Any]], section_name: str, next_cursor: str | None, inbox_type: str) -> str:
     chunks = [f"<h1>{html.escape(section_name)}</h1>"]
     if not items:
         chunks.append("<p>No articles were returned. Use Setup to check the Substack session.</p>")
@@ -742,8 +778,9 @@ def render_items(items: list[dict[str, Any]], section_name: str, next_cursor: st
         author = html.escape(item.get("author", ""))
         subtitle = html.escape(item.get("subtitle", ""))
         metadata = " · ".join(part for part in (author, publication, date) if part)
+        article_path = f"/article/{identifier}?from=saved" if inbox_type == "saved" else f"/article/{identifier}"
         chunks.append(
-            f"<section class='item'><h2><a href='/article/{identifier}'>{html.escape(item.get('title', 'Untitled'))}</a></h2>"
+            f"<section class='item'><h2><a href='{article_path}'>{html.escape(item.get('title', 'Untitled'))}</a></h2>"
             f"<div class='muted'>{metadata}</div>"
             f"<p class='subtitle'>{subtitle}</p></section>"
         )
@@ -762,7 +799,7 @@ async def section(request: Request, inbox_type: str, section_name: str) -> Respo
     except Exception as error:
         body = f"<h1>{html.escape(section_name)}</h1><p class='notice'>Could not load Substack: {html.escape(str(error))}</p>"
         return page(section_name, body, authenticated=True, status_code=502)
-    return page(section_name, render_items(items, section_name, next_cursor), authenticated=True)
+    return page(section_name, render_items(items, section_name, next_cursor, inbox_type), authenticated=True)
 
 
 @app.get("/reader", response_class=HTMLResponse)
@@ -786,11 +823,54 @@ async def article(request: Request, identifier: str) -> Response:
         return page("Article", f"<p class='notice'>Could not load this article: {html.escape(str(error))}</p>", authenticated=True, status_code=502)
     title = html.escape(item.get("title", "Untitled"))
     publication = html.escape(item.get("publication", "Substack"))
+    author = html.escape(item.get("author", ""))
     date = html.escape(item.get("date", "")[:10])
     original = item.get("url")
-    source_link = f"<p class='muted'><a href='{html.escape(original)}'>Open original on Substack</a></p>" if original else ""
-    body = f"<p class='back'><a href='/reader'>← Back to all subscriptions</a></p><article><h1>{title}</h1><p class='muted'>{publication}{(' · ' + date) if date else ''}</p>{source_link}{clean_article_html(item.get('body_html'))}</article>"
-    return page(item.get("title", "Article"), body, authenticated=True)
+    source_link = f"<a href='{html.escape(original, quote=True)}'>Original</a>" if original and original.startswith(("https://", "http://")) else ""
+    back_path = "/saved" if request.query_params.get("from") == "saved" else "/reader"
+    back_label = "Saved" if back_path == "/saved" else "All"
+    metadata = " · ".join(part for part in (author, publication, date) if part)
+    saved = html.escape(json.dumps(read_progress().get(identifier, {}), separators=(",", ":")), quote=True)
+    body = f"""
+    <div id='reader-shell' data-article-id='{html.escape(identifier, quote=True)}' data-progress='{saved}'>
+      <header id='reader-topbar'>
+        <a href='{back_path}' class='reader-back'>← {back_label}</a>
+        <span class='reader-top-title'>{title}</span>
+        {source_link}
+      </header>
+      <div id='reader-frame'>
+        <div id='reader-viewport'>
+          <article id='reader-content'>
+            <h1>{title}</h1><p class='muted reader-byline'>{metadata}</p>
+            {clean_article_html(item.get('body_html'), original)}
+          </article>
+        </div>
+      </div>
+      <footer id='reader-footer'>
+        <button id='reader-prev' type='button' aria-label='Previous page'>←</button>
+        <span id='reader-status' aria-live='polite'>Scroll to read</span>
+        <button id='reader-next' type='button' aria-label='Next page'>→</button>
+      </footer>
+    </div>
+    <script src='/static/reader.js?v=1'></script>
+    """
+    return page(item.get("title", "Article"), body, reader_mode=True)
+
+
+@app.post("/api/progress/{identifier}")
+async def save_reading_progress(request: Request, identifier: str, page_number: int = Form(...), total: int = Form(...), width: int = Form(...), height: int = Form(...)) -> Response:
+    if not is_logged_in(request):
+        return JSONResponse({"error": "Sign in again to save reading progress."}, status_code=401)
+    if request.headers.get("x-reader-progress") != "1":
+        return JSONResponse({"error": "Invalid progress request."}, status_code=403)
+    if not identifier.isdigit() or len(identifier) > 30 or not (0 <= page_number < total <= 10000) or not (100 <= width <= 5000 and 100 <= height <= 5000):
+        return JSONResponse({"error": "Invalid reading position."}, status_code=400)
+    record = {"page": page_number, "total": total, "width": width, "height": height, "updated_at": now_iso()}
+    async with progress_lock:
+        progress = read_progress()
+        progress[identifier] = record
+        write_progress(progress)
+    return JSONResponse(record, headers={"Cache-Control": "no-store"})
 
 
 @app.get("/setup", response_class=HTMLResponse)
