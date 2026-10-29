@@ -106,6 +106,23 @@ class ReaderTests(unittest.TestCase):
         self.assertEqual(asyncio.run(client.list_posts("saved"))[0], [manual])
         self.assertEqual(asyncio.run(client.article("123")), manual)
 
+    def test_newer_synced_article_sorts_above_manual_article_after_sync(self):
+        manual = {"id": "external-example", "title": "Added October 28",
+                  "date": "2026-10-28T21:00:00-05:00", "body_html": "<p>Full body</p>"}
+        main.MANUAL_ARTICLES_PATH.write_text(json.dumps({manual["id"]: manual}))
+
+        async def scenario():
+            client = main.SubstackClient()
+            newer = {"id": 29, "title": "October 29 article", "post_date": "2026-10-29T12:00:00Z"}
+            older = {"id": 27, "title": "October 27 article", "post_date": "2026-10-27T12:00:00Z"}
+            for _ in range(2):
+                await client.store_feed({}, {"items": [older, newer]})
+                saved, _ = await client.list_posts("saved")
+                self.assertEqual([item["id"] for item in saved], ["29", manual["id"], "27"])
+                self.assertEqual(saved[1]["date"], manual["date"])
+                self.assertEqual((await client.article(manual["id"]))["body_html"], manual["body_html"])
+        asyncio.run(scenario())
+
     def test_normal_saved_feed_works_without_manual_articles(self):
         item = {"id": "123", "title": "Normal saved article"}
         main.write_sync_cache({"sections": {"saved": [item]}})

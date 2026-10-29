@@ -617,8 +617,9 @@ class SubstackClient:
         items = items if isinstance(items, list) else []
         if inbox_type == "saved":
             manual = read_manual_articles()
-            added = sorted(manual.values(), key=lambda item: item.get("date", ""), reverse=True)
-            items = added + [item for item in items if str(item.get("id")) not in manual]
+            if manual:
+                items = list(manual.values()) + [item for item in items if str(item.get("id")) not in manual]
+                items.sort(key=lambda item: item.get("date", ""), reverse=True)
         return items, None
 
     async def article(self, identifier: str) -> dict[str, Any]:

@@ -8,7 +8,7 @@ Recipe: AZCLI, application source update only. Reuse substack-kindle in substack
 
 ## Implementation
 
-Store manual articles in /mnt/data/manual-articles.json, outside the replaced feed cache. Merge them first in Saved, deduplicate IDs, and resolve their full bodies independently of the cache. Preserve the original publication date separately; display the requested added date. Back up before seeding the manual record from the existing article cache.
+Store manual articles in /mnt/data/manual-articles.json, outside the replaced feed cache. Merge them into Saved in descending article-date order, deduplicate IDs, and resolve their full bodies independently of the cache. Preserve the original publication date separately; display the requested added date. Back up before seeding the manual record from the existing article cache.
 
 ## Deployment
 
@@ -38,3 +38,11 @@ Validation timestamp: 2026-10-29T02:39:39.137498+00:00
 Deployed and ready: substack-kindle--0000012. Live authenticated server-side HTTP checks: /saved 200, /article/external-felix-hunger-beats-tenure?from=saved 200. First of 202 Saved entries, date 2026-10-28, no duplicate. Full body, three headings, one image, eight links, and reader controls verified. Three isolated feed replacements passed with the actual manual record. Production feed cache was unchanged. Remote main.py SHA256 matches local: 7c1e97d25d6a7127fc9c647cb8f202b0776cb44b6bcb464b36165b841f864c56.
 
 Source archive: source/manual-saved-20261029T023920Z.tgz. Previous revision 0000011 and previous sourceurl secret retained for rollback. Added read-only source URL secret sourceurl-manual-saved; password, session signing secret, sync token, ingress, base image, and storage mounts unchanged.
+
+## Chronological Saved correction
+
+October 28 clarification: the imported article keeps its October 28 date and must appear below a normal October 29 article. It remains persistent across syncs but is no longer pinned first. Scope: sort merged Saved entries by their ISO date strings, matching displayed date order. Normal feeds without manual entries keep their prior behavior. No data changes. Validation: 7 tests passed, including a newer normal article above the manual record and an older article below it across repeated syncs. Compilation and diff whitespace checks passed. Existing ready revision 0000012 and East US context rechecked. No infrastructure or role changes.
+
+Chronological correction validation proof: 2026-10-29T02:45:00.406040+00:00. Seven unit tests, py_compile, git diff --check, and archive byte-match passed. Azure CLI context/app matched existing deployment. Infrastructure, base image, role assignments and storage unchanged. No errors pending.
+
+Chronological correction deployment proof: Revision substack-kindle--0000013 is ready. Live authenticated HTTP Saved/article checks passed (200). The merged Saved list is date-descending, with one copy of the Felix article dated October 28. Three isolated sync replacements with an October 29 normal article and an October 27 normal article produced October 29, Felix October 28, October 27 each time. Full article body/image/links still render; production cache and manual record stayed unchanged. Remote/local main.py SHA256: c961870ff16b5442b7b8ce2ea0ef39684db522a7673af57e63d48ff6d5ce6cb7. Source archive: source/saved-date-20261029T024500Z.tgz. Previous sourceurl-manual-saved secret and revision 0000012 retained for rollback.
