@@ -29,6 +29,7 @@ DATA_DIR = Path(os.environ.get("DATA_DIR", "/data"))
 CONFIG_PATH = DATA_DIR / "config.json"
 CACHE_PATH = DATA_DIR / "sync-cache.json"
 PROGRESS_PATH = DATA_DIR / "reading-progress.json"
+MANUAL_ARTICLES_PATH = DATA_DIR / "manual-articles.json"
 SESSION_COOKIE = "reader_session"
 MAX_ITEMS = 60
 
@@ -110,6 +111,20 @@ def read_progress() -> dict[str, Any]:
         return value if isinstance(value, dict) else {}
     except (FileNotFoundError, json.JSONDecodeError):
         return {}
+
+
+def read_manual_articles() -> dict[str, dict[str, Any]]:
+    try:
+        articles = json.loads(MANUAL_ARTICLES_PATH.read_text())
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+    if not isinstance(articles, dict):
+        return {}
+    return {
+        str(identifier): article
+        for identifier, article in articles.items()
+        if isinstance(article, dict) and str(article.get("id")) == str(identifier)
+    }
 
 
 def write_progress(progress: dict[str, Any]) -> None:
@@ -599,9 +614,17 @@ class SubstackClient:
         cache = read_sync_cache()
         sections = as_dict(cache.get("sections"))
         items = sections.get(inbox_type)
-        return (items if isinstance(items, list) else []), None
+        items = items if isinstance(items, list) else []
+        if inbox_type == "saved":
+            manual = read_manual_articles()
+            added = sorted(manual.values(), key=lambda item: item.get("date", ""), reverse=True)
+            items = added + [item for item in items if str(item.get("id")) not in manual]
+        return items, None
 
     async def article(self, identifier: str) -> dict[str, Any]:
+        manual = read_manual_articles().get(str(identifier))
+        if manual:
+            return manual
         cache = read_sync_cache()
         articles = as_dict(cache.get("articles"))
         cached = as_dict(articles.get(str(identifier)))

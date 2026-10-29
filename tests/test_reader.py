@@ -12,14 +12,16 @@ from app import main
 class ReaderTests(unittest.TestCase):
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
-        self.original = (main.DATA_DIR, main.CONFIG_PATH, main.PROGRESS_PATH)
+        self.original = (main.DATA_DIR, main.CONFIG_PATH, main.PROGRESS_PATH, main.CACHE_PATH, main.MANUAL_ARTICLES_PATH)
         main.DATA_DIR = Path(self.directory.name)
         main.CONFIG_PATH = main.DATA_DIR / "config.json"
         main.PROGRESS_PATH = main.DATA_DIR / "reading-progress.json"
+        main.CACHE_PATH = main.DATA_DIR / "sync-cache.json"
+        main.MANUAL_ARTICLES_PATH = main.DATA_DIR / "manual-articles.json"
         main.write_config({"session_secret": "test-session-secret", "password_hash": "configured"})
 
     def tearDown(self):
-        main.DATA_DIR, main.CONFIG_PATH, main.PROGRESS_PATH = self.original
+        main.DATA_DIR, main.CONFIG_PATH, main.PROGRESS_PATH, main.CACHE_PATH, main.MANUAL_ARTICLES_PATH = self.original
         self.directory.cleanup()
 
     def request(self, authorized=True, progress_header=True):
@@ -62,6 +64,55 @@ class ReaderTests(unittest.TestCase):
         self.assertIn("Open it in the original article.", cleaned)
         self.assertNotIn("alert", cleaned)
         self.assertNotIn("iframe", cleaned)
+
+    def test_manual_saved_article_survives_repeated_syncs_and_renders(self):
+        manual = {"id": "external-example", "title": "A manually saved article",
+                  "author": "Example Author", "publication": "example.org",
+                  "date": "2026-10-28T21:00:00-05:00", "url": "https://example.org/article",
+                  "body_html": "<p>Complete article body.</p>"}
+        main.MANUAL_ARTICLES_PATH.write_text(json.dumps({manual["id"]: manual}))
+
+        async def scenario():
+            client = main.SubstackClient()
+            for identifier in (101, 202):
+                post = {"id": identifier, "title": "Synced article"}
+                await client.store_feed({"posts": [post]}, {"items": [post]})
+                saved, _ = await client.list_posts("saved")
+                self.assertEqual([item["id"] for item in saved], [manual["id"], str(identifier)])
+                inbox, _ = await client.list_posts("inbox")
+                self.assertEqual([item["id"] for item in inbox], [str(identifier)])
+            await client.store_feed({}, {})
+            saved, _ = await client.list_posts("saved")
+            self.assertEqual(saved, [manual])
+            self.assertEqual(await client.article(manual["id"]), manual)
+            # Exercise the actual authenticated handlers using only fixture credentials.
+            listing = await main.saved(self.request())
+            rendered = await main.article(self.request(), manual["id"])
+            self.assertEqual(listing.status_code, 200)
+            self.assertIn(b"/article/external-example?from=saved", listing.body)
+            self.assertIn(b"2026-10-28", listing.body)
+            self.assertEqual(rendered.status_code, 200)
+            self.assertIn(b"Complete article body.", rendered.body)
+            self.assertIn(b"reader-next", rendered.body)
+        asyncio.run(scenario())
+
+    def test_manual_article_is_deduplicated_and_overrides_stale_body(self):
+        manual = {"id": "123", "title": "Manual", "date": "2026-10-28",
+                  "body_html": "<p>Full body</p>"}
+        main.MANUAL_ARTICLES_PATH.write_text(json.dumps({"123": manual}))
+        main.write_sync_cache({"sections": {"saved": [{"id": "123", "title": "Stale"}]},
+                               "articles": {"123": {"id": "123", "body_html": "Stale"}}})
+        client = main.SubstackClient()
+        self.assertEqual(asyncio.run(client.list_posts("saved"))[0], [manual])
+        self.assertEqual(asyncio.run(client.article("123")), manual)
+
+    def test_normal_saved_feed_works_without_manual_articles(self):
+        item = {"id": "123", "title": "Normal saved article"}
+        main.write_sync_cache({"sections": {"saved": [item]}})
+        client = main.SubstackClient()
+        self.assertEqual(asyncio.run(client.list_posts("saved"))[0], [item])
+        main.MANUAL_ARTICLES_PATH.write_text("[]")
+        self.assertEqual(asyncio.run(client.list_posts("saved"))[0], [item])
 
 
 if __name__ == "__main__":
